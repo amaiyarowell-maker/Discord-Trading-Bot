@@ -23,27 +23,46 @@ FALLBACK_WATCHLIST = [
 def get_movers_shortlist() -> list:
     """
     Pulls a shortlist of currently active tickers using yfinance's
-    'most active' / trending screener. Falls back to a static list
-    of liquid large-caps if the screener call fails for any reason.
+    'most active' / trending screener, then merges in any PINNED_TICKERS
+    so those are always scanned regardless of that day's movers.
+    Falls back to a static list of liquid large-caps if the screener
+    call fails for any reason.
     """
+    tickers = []
     try:
         screener = yf.screen("most_actives", count=config.MAX_MOVERS_TO_SCAN)
         quotes = screener.get("quotes", [])
         tickers = [q["symbol"] for q in quotes if "symbol" in q]
         if tickers:
             logger.info(f"Pulled {len(tickers)} tickers from most-actives screener.")
-            return tickers[: config.MAX_MOVERS_TO_SCAN]
     except Exception as e:
         logger.warning(f"Movers screener failed ({e}); using fallback watchlist.")
 
-    return FALLBACK_WATCHLIST[: config.MAX_MOVERS_TO_SCAN]
+    if not tickers:
+        tickers = FALLBACK_WATCHLIST[: config.MAX_MOVERS_TO_SCAN]
+
+    # Merge in pinned tickers (no duplicates), always included regardless of cap
+    pinned = getattr(config, "PINNED_TICKERS", [])
+    for symbol in pinned:
+        if symbol not in tickers:
+            tickers.append(symbol)
+
+    if pinned:
+        logger.info(f"Pinned tickers included: {pinned}")
+
+    return tickers
 
 
-def check_stock_breakout(symbol: str):
+def check_stock_breakout(symbol: str, is_futures: bool = False):
     """
     Downloads recent 1-min candles for `symbol`, computes today's
     opening range (high/low of the session so far) and checks whether
     the latest price has broken out of that range with volume confirmation.
+    If MOMENTUM_FILTER_ENABLED, also requires price to be on the correct
+    side of a longer moving average to confirm trend alignment.
+
+    is_futures: when True, skips the MIN_PRICE / MIN_AVG_VOLUME equity
+    filters, since those thresholds don't apply meaningfully to futures.
 
     Returns a dict with signal details if a breakout is detected, else None.
     """
@@ -59,8 +78,9 @@ def check_stock_breakout(symbol: str):
         logger.warning(f"[{symbol}] yfinance download failed: {e}")
         return None
 
-    if data is None or data.empty or len(data) < 16:
-        return None  # not enough candles yet to define a range
+    min_candles_needed = max(16, config.MOMENTUM_MA_PERIOD + 1)
+    if data is None or data.empty or len(data) < min_candles_needed:
+        return None  # not enough candles yet to define a range / MA
 
     # Flatten multi-index columns if yfinance returns them that way
     if isinstance(data.columns, pd.MultiIndex):
@@ -70,7 +90,7 @@ def check_stock_breakout(symbol: str):
     price = float(latest["Close"])
     volume = float(latest["Volume"])
 
-    if price < config.MIN_PRICE:
+    if not is_futures and price < config.MIN_PRICE:
         return None
 
     # Opening range = first N minutes of the available session data
@@ -80,7 +100,9 @@ def check_stock_breakout(symbol: str):
 
     # Average volume over the lookback (excluding the current forming candle)
     avg_volume = float(data["Volume"].iloc[:-1].mean())
-    if avg_volume < config.MIN_AVG_VOLUME or avg_volume == 0:
+    if not is_futures and (avg_volume < config.MIN_AVG_VOLUME or avg_volume == 0):
+        return None
+    if avg_volume == 0:
         return None
 
     volume_confirmed = volume >= avg_volume * config.VOLUME_SPIKE_MULTIPLIER
@@ -92,6 +114,15 @@ def check_stock_breakout(symbol: str):
         return None
 
     direction = "UP" if breakout_up else "DOWN"
+
+    # Momentum/trend confirmation: price must be on the correct side of
+    # the moving average for the breakout direction to count.
+    if config.MOMENTUM_FILTER_ENABLED:
+        ma = float(data["Close"].iloc[-config.MOMENTUM_MA_PERIOD:].mean())
+        if direction == "UP" and price <= ma:
+            return None
+        if direction == "DOWN" and price >= ma:
+            return None
 
     return {
         "symbol": symbol,
@@ -111,7 +142,23 @@ def scan_stocks(watchlist: list) -> list:
     """
     signals = []
     for symbol in watchlist:
-        result = check_stock_breakout(symbol)
+        result = check_stock_breakout(symbol, is_futures=False)
+        if result:
+            signals.append(result)
+    return signals
+
+
+def scan_futures() -> list:
+    """
+    Runs check_stock_breakout across config.FUTURES_TICKERS (e.g. ES=F, NQ=F).
+    Returns a list of signal dicts for every contract that triggered.
+    """
+    if not getattr(config, "FUTURES_ENABLED", False):
+        return []
+
+    signals = []
+    for symbol in config.FUTURES_TICKERS:
+        result = check_stock_breakout(symbol, is_futures=True)
         if result:
             signals.append(result)
     return signals
