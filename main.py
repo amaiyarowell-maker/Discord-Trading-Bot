@@ -17,9 +17,10 @@ import sys
 
 import config
 from cooldown import CooldownTracker
-from notifier import send_discord_alert, build_breakout_embed
+from notifier import send_discord_alert, build_breakout_embed, build_rejection_embed
 from stock_scanner import get_movers_shortlist, scan_stocks, scan_futures
-from btc_scanner import check_btc_breakout
+from btc_scanner import check_btc_breakout, check_btc_rejection, _fetch_btc_ohlcv
+from market_hours import is_market_open
 
 # ── Logging setup ─────────────────────────────────────────────────
 logging.basicConfig(
@@ -37,16 +38,21 @@ cooldown = CooldownTracker()
 MOVERS_REFRESH_EVERY_N_CYCLES = 5  # refresh the shortlist every 5 minutes instead of every cycle
 
 
-def handle_signal(signal: dict, webhook_url: str, asset_type: str):
-    """Sends the alert if not on cooldown, and marks cooldown if sent."""
+def handle_signal(signal: dict, webhook_url: str, asset_type: str, signal_type: str = "breakout"):
+    """
+    Sends the alert if not on cooldown, and marks cooldown if sent.
+    signal_type: "breakout" or "rejection" - determines which embed
+    style is used and tracks cooldown separately per type.
+    """
     symbol = signal["symbol"]
     direction = signal["direction"]
 
-    if cooldown.is_on_cooldown(symbol, direction):
-        logger.info(f"[{symbol}] {direction} signal suppressed (cooldown active).")
+    if cooldown.is_on_cooldown(symbol, direction, signal_type):
+        logger.info(f"[{symbol}] {direction} {signal_type} signal suppressed (cooldown active).")
         return
 
-    embed = build_breakout_embed(
+    embed_builder = build_rejection_embed if signal_type == "rejection" else build_breakout_embed
+    embed = embed_builder(
         symbol=symbol,
         direction=direction,
         price=signal["price"],
@@ -59,36 +65,53 @@ def handle_signal(signal: dict, webhook_url: str, asset_type: str):
 
     sent = send_discord_alert(webhook_url, embed)
     if sent:
-        cooldown.mark_alerted(symbol, direction)
-        logger.info(f"[{symbol}] {direction} breakout alert sent.")
+        cooldown.mark_alerted(symbol, direction, signal_type)
+        logger.info(f"[{symbol}] {direction} {signal_type} alert sent.")
     else:
-        logger.warning(f"[{symbol}] {direction} breakout detected but Discord send failed.")
+        logger.warning(f"[{symbol}] {direction} {signal_type} detected but Discord send failed.")
 
 
 def run_cycle(watchlist: list):
     """Runs one full scan cycle across stocks, futures, and BTC."""
-    # Stocks
-    try:
-        stock_signals = scan_stocks(watchlist)
-        for sig in stock_signals:
-            handle_signal(sig, config.STOCK_WEBHOOK_URL, asset_type="stock")
-    except Exception as e:
-        logger.error(f"Stock scan cycle failed: {e}")
+    market_open = is_market_open()
 
-    # Futures
-    try:
-        futures_signals = scan_futures()
-        futures_webhook = config.FUTURES_WEBHOOK_URL or config.STOCK_WEBHOOK_URL
-        for sig in futures_signals:
-            handle_signal(sig, futures_webhook, asset_type="futures")
-    except Exception as e:
-        logger.error(f"Futures scan cycle failed: {e}")
+    # Stocks - skipped outside market hours if MARKET_HOURS_ONLY is on
+    if market_open:
+        try:
+            results = scan_stocks(watchlist)
+            for sig in results["breakout"]:
+                handle_signal(sig, config.STOCK_WEBHOOK_URL, asset_type="stock", signal_type="breakout")
+            for sig in results["rejection"]:
+                handle_signal(sig, config.STOCK_WEBHOOK_URL, asset_type="stock", signal_type="rejection")
+        except Exception as e:
+            logger.error(f"Stock scan cycle failed: {e}")
+    else:
+        logger.info("Market closed - skipping stock scan this cycle.")
 
-    # BTC
+    # Futures - same market-hours gate as stocks
+    if market_open:
+        try:
+            results = scan_futures()
+            futures_webhook = config.FUTURES_WEBHOOK_URL or config.STOCK_WEBHOOK_URL
+            for sig in results["breakout"]:
+                handle_signal(sig, futures_webhook, asset_type="futures", signal_type="breakout")
+            for sig in results["rejection"]:
+                handle_signal(sig, futures_webhook, asset_type="futures", signal_type="rejection")
+        except Exception as e:
+            logger.error(f"Futures scan cycle failed: {e}")
+    else:
+        logger.info("Market closed - skipping futures scan this cycle.")
+
+    # BTC - always runs, 24/7, regardless of market hours
     try:
-        btc_signal = check_btc_breakout()
-        if btc_signal:
-            handle_signal(btc_signal, config.BTC_WEBHOOK_URL, asset_type="crypto")
+        ohlcv = _fetch_btc_ohlcv()
+        if ohlcv is not None:
+            btc_breakout = check_btc_breakout(ohlcv=ohlcv)
+            if btc_breakout:
+                handle_signal(btc_breakout, config.BTC_WEBHOOK_URL, asset_type="crypto", signal_type="breakout")
+            btc_rejection = check_btc_rejection(ohlcv=ohlcv)
+            if btc_rejection:
+                handle_signal(btc_rejection, config.BTC_WEBHOOK_URL, asset_type="crypto", signal_type="rejection")
     except Exception as e:
         logger.error(f"BTC scan cycle failed: {e}")
 
@@ -100,7 +123,9 @@ def main():
         f"Opening range: {config.OPENING_RANGE_MINUTES}m | "
         f"Volume multiplier: {config.VOLUME_SPIKE_MULTIPLIER}x | "
         f"Futures: {'on' if config.FUTURES_ENABLED else 'off'} | "
-        f"Momentum filter: {'on' if config.MOMENTUM_FILTER_ENABLED else 'off'}"
+        f"Momentum filter: {'on' if config.MOMENTUM_FILTER_ENABLED else 'off'} | "
+        f"Rejection signals: {'on' if config.REJECTION_SIGNALS_ENABLED else 'off'} | "
+        f"Market hours only: {'on' if config.MARKET_HOURS_ONLY else 'off'}"
     )
 
     watchlist = get_movers_shortlist()
@@ -109,7 +134,11 @@ def main():
     cycle_count = 0
     while True:
         try:
-            if cycle_count % MOVERS_REFRESH_EVERY_N_CYCLES == 0 and cycle_count != 0:
+            if (
+                is_market_open()
+                and cycle_count % MOVERS_REFRESH_EVERY_N_CYCLES == 0
+                and cycle_count != 0
+            ):
                 watchlist = get_movers_shortlist()
                 logger.info(f"Refreshed watchlist ({len(watchlist)}): {watchlist}")
 
