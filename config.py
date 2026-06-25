@@ -52,8 +52,8 @@ FUTURES_TICKERS = ["ES=F", "NQ=F"]
 # this is a known tradeoff of not using a paid feed.
 
 # ── Signal Thresholds ─────────────────────────────────────────────
-VOLUME_SPIKE_MULTIPLIER = 1.5       # current volume must be >= 1.5x the recent average
-BREAKOUT_BUFFER_PCT = 0.0005        # 0.05% buffer above/below range to avoid noise triggers
+VOLUME_SPIKE_MULTIPLIER = 1.2       # current volume must be >= 1.2x the recent average (loosened from 1.5x)
+BREAKOUT_BUFFER_PCT = 0.0002        # 0.02% buffer above/below range to avoid noise triggers (loosened from 0.05%)
 
 # ── Momentum / Trend Confirmation Filter ──────────────────────────
 # A breakout only alerts if price is also on the "correct" side of a
@@ -61,7 +61,7 @@ BREAKOUT_BUFFER_PCT = 0.0005        # 0.05% buffer above/below range to avoid no
 # a DOWN breakout needs price below it. This cuts down on fakeouts,
 # especially on fast-moving instruments like futures.
 MOMENTUM_FILTER_ENABLED = True
-MOMENTUM_MA_PERIOD = 20             # number of candles in the moving average
+MOMENTUM_MA_PERIOD = 10             # number of candles in the moving average (shortened from 20, reacts faster to sharp moves)
 
 # ── Rejection / Reversal Signals ──────────────────────────────────
 # A DIFFERENT signal from breakout: price approaches a range high/low,
@@ -71,7 +71,7 @@ MOMENTUM_MA_PERIOD = 20             # number of candles in the moving average
 REJECTION_SIGNALS_ENABLED = True
 # How close price must get to the range edge (as a % of price) to count
 # as "testing" the level before reversing.
-REJECTION_PROXIMITY_PCT = 0.001     # 0.1%
+REJECTION_PROXIMITY_PCT = 0.0015    # 0.15% (loosened from 0.1%)
 # Volume confirmation reuses VOLUME_SPIKE_MULTIPLIER above.
 
 # ── BTC Settings ───────────────────────────────────────────────────
