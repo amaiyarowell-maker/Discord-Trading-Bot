@@ -28,7 +28,7 @@ MIN_AVG_VOLUME = 500_000            # ignore illiquid names
 # Tickers you always want scanned, regardless of whether they show up
 # on the day's "movers" list. Add/remove freely.
 PINNED_TICKERS = [
-    # "AAPL", "TSLA",
+    # "SPY", "TSLA",
 ]
 
 # ── Futures ────────────────────────────────────────────────────────
