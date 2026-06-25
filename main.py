@@ -18,7 +18,7 @@ import sys
 import config
 from cooldown import CooldownTracker
 from notifier import send_discord_alert, build_breakout_embed
-from stock_scanner import get_movers_shortlist, scan_stocks
+from stock_scanner import get_movers_shortlist, scan_stocks, scan_futures
 from btc_scanner import check_btc_breakout
 
 # ── Logging setup ─────────────────────────────────────────────────
@@ -66,7 +66,7 @@ def handle_signal(signal: dict, webhook_url: str, asset_type: str):
 
 
 def run_cycle(watchlist: list):
-    """Runs one full scan cycle across stocks and BTC."""
+    """Runs one full scan cycle across stocks, futures, and BTC."""
     # Stocks
     try:
         stock_signals = scan_stocks(watchlist)
@@ -74,6 +74,15 @@ def run_cycle(watchlist: list):
             handle_signal(sig, config.STOCK_WEBHOOK_URL, asset_type="stock")
     except Exception as e:
         logger.error(f"Stock scan cycle failed: {e}")
+
+    # Futures
+    try:
+        futures_signals = scan_futures()
+        futures_webhook = config.FUTURES_WEBHOOK_URL or config.STOCK_WEBHOOK_URL
+        for sig in futures_signals:
+            handle_signal(sig, futures_webhook, asset_type="futures")
+    except Exception as e:
+        logger.error(f"Futures scan cycle failed: {e}")
 
     # BTC
     try:
@@ -89,7 +98,9 @@ def main():
     logger.info(
         f"Scan interval: {config.SCAN_INTERVAL_SECONDS}s | "
         f"Opening range: {config.OPENING_RANGE_MINUTES}m | "
-        f"Volume multiplier: {config.VOLUME_SPIKE_MULTIPLIER}x"
+        f"Volume multiplier: {config.VOLUME_SPIKE_MULTIPLIER}x | "
+        f"Futures: {'on' if config.FUTURES_ENABLED else 'off'} | "
+        f"Momentum filter: {'on' if config.MOMENTUM_FILTER_ENABLED else 'off'}"
     )
 
     watchlist = get_movers_shortlist()
