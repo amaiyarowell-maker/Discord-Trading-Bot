@@ -34,7 +34,7 @@ def check_btc_breakout():
     Returns a signal dict if triggered, else None.
     """
     exchange = _get_exchange()
-    limit = config.OPENING_RANGE_MINUTES + 5  # small buffer
+    limit = config.OPENING_RANGE_MINUTES + max(5, config.MOMENTUM_MA_PERIOD)
 
     try:
         ohlcv = exchange.fetch_ohlcv(config.BTC_SYMBOL, timeframe=config.BTC_CANDLE_TIMEFRAME, limit=limit)
@@ -67,6 +67,15 @@ def check_btc_breakout():
         return None
 
     direction = "UP" if breakout_up else "DOWN"
+
+    # Momentum/trend confirmation, same approach as the stock scanner.
+    if config.MOMENTUM_FILTER_ENABLED and len(ohlcv) >= config.MOMENTUM_MA_PERIOD:
+        closes = [c[4] for c in ohlcv[-config.MOMENTUM_MA_PERIOD:]]
+        ma = sum(closes) / len(closes)
+        if direction == "UP" and price <= ma:
+            return None
+        if direction == "DOWN" and price >= ma:
+            return None
 
     return {
         "symbol": "BTC/USD",
