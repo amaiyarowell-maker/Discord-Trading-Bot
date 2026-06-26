@@ -84,3 +84,10 @@ ALERT_COOLDOWN_MINUTES = 15         # don't re-alert the same symbol+direction w
 
 # ── Logging ────────────────────────────────────────────────────────
 LOG_FILE = "bot.log"
+
+# ── Debugging ──────────────────────────────────────────────────────
+# When True, logs the exact computed values (price, range, volume ratio,
+# moving average) for every symbol every cycle, so you can see exactly
+# why a signal did or didn't fire. Very chatty - turn off once things
+# are working as expected.
+DEBUG_SIGNAL_LOGGING = True
