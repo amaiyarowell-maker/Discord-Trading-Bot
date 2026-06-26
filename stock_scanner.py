@@ -53,6 +53,32 @@ def get_movers_shortlist() -> list:
     return tickers
 
 
+def _drop_trailing_zero_volume(data):
+    """
+    yfinance's most recent 1-min candle is frequently still "forming" -
+    Yahoo hasn't tallied its volume yet, so it reads as Volume=0 even
+    though price has already updated. Comparing against that 0 makes
+    volume confirmation mathematically impossible to pass.
+
+    Drops any trailing candles with Volume == 0 so that .iloc[-1] always
+    refers to the last fully-closed, real candle. Keeps at least the
+    minimum candle count needed for range/MA calculations - if trimming
+    would drop below that, returns None rather than returning bad data.
+    """
+    if data is None or data.empty:
+        return None
+
+    trimmed = data
+    while len(trimmed) > 0 and float(trimmed.iloc[-1]["Volume"]) == 0:
+        trimmed = trimmed.iloc[:-1]
+
+    min_needed = max(16, config.MOMENTUM_MA_PERIOD + 1, config.OPENING_RANGE_MINUTES + 1)
+    if len(trimmed) < min_needed:
+        return None
+
+    return trimmed
+
+
 def _fetch_candles(symbol: str):
     """
     Shared data-fetch helper used by both breakout and rejection checks,
@@ -103,6 +129,12 @@ def check_stock_breakout(symbol: str, is_futures: bool = False, data=None):
     if data is None:
         return None
 
+    # Drop any trailing still-forming candle(s) with no tallied volume yet,
+    # so the "latest" candle used below always has real, finalized volume.
+    data = _drop_trailing_zero_volume(data)
+    if data is None:
+        return None
+
     latest = data.iloc[-1]
     price = float(latest["Close"])
     volume = float(latest["Volume"])
@@ -115,7 +147,7 @@ def check_stock_breakout(symbol: str, is_futures: bool = False, data=None):
     range_high = float(range_window["High"].max())
     range_low = float(range_window["Low"].min())
 
-    # Average volume over the lookback (excluding the current forming candle)
+    # Average volume over the lookback (excluding the current candle)
     avg_volume = float(data["Volume"].iloc[:-1].mean())
     if not is_futures and (avg_volume < config.MIN_AVG_VOLUME or avg_volume == 0):
         return None
@@ -176,6 +208,12 @@ def check_stock_rejection(symbol: str, is_futures: bool = False, data=None):
     if data is None:
         data = _fetch_candles(symbol)
     if data is None:
+        return None
+
+    # Drop any trailing still-forming candle(s) with no tallied volume yet,
+    # so -1/-2 indexing below always refers to real, finalized candles.
+    data = _drop_trailing_zero_volume(data)
+    if data is None or len(data) < 2:
         return None
 
     latest = data.iloc[-1]
