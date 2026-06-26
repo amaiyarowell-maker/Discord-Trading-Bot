@@ -73,6 +73,9 @@ def _fetch_candles(symbol: str):
 
     min_candles_needed = max(16, config.MOMENTUM_MA_PERIOD + 1)
     if data is None or data.empty or len(data) < min_candles_needed:
+        if getattr(config, "DEBUG_SIGNAL_LOGGING", False):
+            actual_len = 0 if data is None else len(data)
+            logger.info(f"[{symbol}] Skipped - only {actual_len} candles available, need {min_candles_needed}.")
         return None
 
     if isinstance(data.columns, pd.MultiIndex):
@@ -124,6 +127,13 @@ def check_stock_breakout(symbol: str, is_futures: bool = False, data=None):
     breakout_up = price > range_high * (1 + config.BREAKOUT_BUFFER_PCT)
     breakout_down = price < range_low * (1 - config.BREAKOUT_BUFFER_PCT)
 
+    if getattr(config, "DEBUG_SIGNAL_LOGGING", False):
+        logger.info(
+            f"[{symbol}] BREAKOUT-CHECK price={price:.2f} range=({range_low:.2f},{range_high:.2f}) "
+            f"vol={volume:.0f} avg_vol={avg_volume:.0f} vol_ratio={volume/avg_volume:.2f}x "
+            f"breakout_up={breakout_up} breakout_down={breakout_down} vol_confirmed={volume_confirmed}"
+        )
+
     if not volume_confirmed or not (breakout_up or breakout_down):
         return None
 
@@ -133,9 +143,10 @@ def check_stock_breakout(symbol: str, is_futures: bool = False, data=None):
     # the moving average for the breakout direction to count.
     if config.MOMENTUM_FILTER_ENABLED:
         ma = float(data["Close"].iloc[-config.MOMENTUM_MA_PERIOD:].mean())
-        if direction == "UP" and price <= ma:
-            return None
-        if direction == "DOWN" and price >= ma:
+        momentum_pass = (direction == "UP" and price > ma) or (direction == "DOWN" and price < ma)
+        if getattr(config, "DEBUG_SIGNAL_LOGGING", False):
+            logger.info(f"[{symbol}] MOMENTUM-CHECK direction={direction} price={price:.2f} ma={ma:.2f} pass={momentum_pass}")
+        if not momentum_pass:
             return None
 
     return {
