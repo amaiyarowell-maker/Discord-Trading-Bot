@@ -7,6 +7,7 @@ confidence score.
 
 import logging
 import yfinance as yf
+import pandas as pd
 
 import config
 
@@ -35,6 +36,13 @@ def fetch_vix() -> dict:
         if data is None or data.empty:
             logger.warning("VIX fetch returned no data; using last cached value.")
             return _cached_vix
+
+        # yfinance sometimes returns multi-index columns (e.g. when the
+        # ticker has multiple data sources merged) - flatten so
+        # data["Close"] is a plain Series, same fix used in the other
+        # scanner modules.
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
 
         latest_close = float(data["Close"].iloc[-1])
         label = classify_vix(latest_close)
