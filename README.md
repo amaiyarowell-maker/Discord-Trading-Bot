@@ -6,13 +6,15 @@ Scans a dynamic shortlist of actively-moving stocks, futures, and BTC for four k
 
 ## How it works
 
-### Signal types (4, each visually distinct in Discord)
+### Signal types (5, each visually distinct in Discord)
 - **Breakout** (green/red): price breaks above/below the session's opening range, confirmed by a volume spike, optionally confirmed by same-timeframe momentum and higher-timeframe trend.
 - **Rejection** (blue/amber): the opposite read - price tests a range high/low and gets pushed back, confirmed by volume. Catches "tested and held" setups.
 - **Liquidity Sweep** (purple): price wicks beyond a recent swing high/low (where stop orders likely cluster) then closes back on the other side - a Smart Money Concepts (SMC) pattern, similar shape to rejection but measured against recent swing points instead of the session range.
 - **Fair Value Gap / FVG** (teal): a 3-candle imbalance where price leaves a gap that often gets revisited later. Flagged as a zone to watch, not a trade trigger - no ATR-based stop/target on these.
+- **Early Momentum** (orange): the fastest, *least*-confirmed signal type - deliberately skips the opening range, the higher-timeframe trend gate, and the momentum-MA filter that every other signal type uses. Looks directly at the last few candles for a sudden, same-direction acceleration in price AND volume. Built specifically to catch a move closer to when it *starts*, at the explicit cost of more false positives than the other four types. Never eligible for the A+ badge, since it has a fundamentally different (faster, less-confirmed) risk profile.
 
 ### Context layered onto every signal
+- **Entry guidance:** every alert includes a tailored Entry Tactic, Invalidation, and Confirmation to Watch, written specifically for that signal type and using the actual numbers from that alert (not generic boilerplate). The tactic differs meaningfully by signal type - breakout guidance is honest about the chase-vs-retest tradeoff, rejection/sweep guidance treats the alert itself as close to the entry trigger, FVG guidance frames it as a zone to wait for rather than chase, and early momentum guidance is explicit about chase risk and suggests smaller sizing given how little confirmation that signal type requires.
 - **Higher timeframe (HTF) trend filter:** pulls 15-min candles alongside the 1-min signal data. If the 15-min trend actively disagrees with a signal's direction, the alert is blocked outright - this is a hard gate, not just a score adjustment. A flat/unclear HTF trend is treated as neutral and doesn't block anything.
 - **ATR-based stops & targets:** every breakout/rejection/sweep alert includes a suggested Entry, Stop Loss, Take Profit, and Risk:Reward ratio, calculated from Average True Range (volatility) rather than a fixed dollar or percent distance.
 - **VIX sentiment:** fetched once per cycle (it's market-wide, not per-symbol) and shown on every alert as context - elevated VIX ("HIGH FEAR") flags choppier conditions where breakouts are historically less reliable.
@@ -77,6 +79,8 @@ All thresholds live in `config.py`:
 | `SMC_SIGNALS_ENABLED` | Toggle for liquidity sweep + FVG detection |
 | `SWING_LOOKBACK_CANDLES` / `SWEEP_PROXIMITY_PCT` | How far back to look for swing points, and how close price must wick beyond one to count as a sweep |
 | `FVG_MIN_GAP_PCT` | Minimum gap size (as % of price) for an FVG to be flagged as notable |
+| `EARLY_MOMENTUM_ENABLED` / `EARLY_MOMENTUM_CONFIRM_CANDLES` / `EARLY_MOMENTUM_LOOKBACK_CANDLES` | Toggle, how many consecutive same-direction candles are required, and the baseline window used to measure acceleration against |
+| `EARLY_MOMENTUM_PRICE_ACCEL_MULTIPLIER` | How many times faster than the baseline the latest candle's price move must be to count as "accelerating" |
 | `ATR_PERIOD` / `ATR_STOP_MULTIPLIER` / `ATR_TARGET_MULTIPLIER` | ATR lookback period and the multipliers used to set suggested stop/target distance |
 | `SENTIMENT_ENABLED` / `VIX_HIGH_FEAR_THRESHOLD` / `VIX_LOW_FEAR_THRESHOLD` | Toggle and thresholds for VIX-based market sentiment context |
 | `CONFIDENCE_SCORING_ENABLED` / `MIN_CONFIDENCE_TO_ALERT` | Toggle and the minimum score (0-100) required to actually send an alert |
