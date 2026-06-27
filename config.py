@@ -139,6 +139,15 @@ CONFIDENCE_SCORING_ENABLED = True
 # Set to 0 to disable score-based suppression and just display the score.
 MIN_CONFIDENCE_TO_ALERT = 40
 
+# ── A+ Setup Tagging ───────────────────────────────────────────────
+# When a signal clears ALL of these bars, it's tagged "A+" in the
+# Discord embed with a distinct badge - a deliberately small subset
+# of alerts, not just "the better half" of what fires. Defined here
+# so the bar can be tuned without touching confidence.py directly.
+A_PLUS_MIN_CONFIDENCE = 75
+A_PLUS_REQUIRE_ACTIVE_HTF_AGREEMENT = True
+A_PLUS_MIN_RISK_REWARD = 2.0
+
 # ── Logging ────────────────────────────────────────────────────────
 LOG_FILE = "bot.log"
 
