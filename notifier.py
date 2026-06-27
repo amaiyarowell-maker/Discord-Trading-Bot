@@ -52,6 +52,23 @@ def _vix_field(vix_data: dict) -> list:
     ]
 
 
+def _a_plus_prefix(is_a_plus: bool) -> str:
+    """Returns a title prefix badge for A+ setups, or an empty string otherwise."""
+    return "⭐ A+ SETUP — " if is_a_plus else ""
+
+
+def _a_plus_field(is_a_plus: bool) -> list:
+    """
+    Adds an explicit A+ field so it's visible even if someone only
+    skims the field list and misses the title prefix. Only added when
+    True - non-A+ alerts don't get a "Not A+" field, since that would
+    just be noise on the majority of (normal) alerts.
+    """
+    if not is_a_plus:
+        return []
+    return [{"name": "⭐ Setup Grade", "value": "A+ (all criteria met)", "inline": True}]
+
+
 def send_discord_alert(webhook_url: str, embed: dict):
     """
     Sends a single embed message to a Discord webhook.
@@ -77,7 +94,8 @@ def send_discord_alert(webhook_url: str, embed: dict):
 
 def build_breakout_embed(symbol: str, direction: str, price: float, range_high: float,
                           range_low: float, volume: float, avg_volume: float, asset_type: str,
-                          risk_data: dict = None, confidence: dict = None, vix_data: dict = None) -> dict:
+                          risk_data: dict = None, confidence: dict = None, vix_data: dict = None,
+                          is_a_plus: bool = False) -> dict:
     """
     Builds a Discord embed dict for a breakout alert.
     direction: "UP" or "DOWN"
@@ -85,6 +103,9 @@ def build_breakout_embed(symbol: str, direction: str, price: float, range_high: 
     risk_data/confidence/vix_data are optional - if not provided (or
     incomplete), those fields are simply omitted from the embed rather
     than showing blank or error values.
+    is_a_plus: when True, adds a "⭐ A+ SETUP" badge to the title and
+    an explicit field - reserved for signals meeting the strict
+    confidence + HTF agreement + risk:reward bar in confidence.py.
     """
     color = 0x2ECC71 if direction == "UP" else 0xE74C3C  # green / red
     arrow = "🟢⬆️" if direction == "UP" else "🔴⬇️"
@@ -101,9 +122,10 @@ def build_breakout_embed(symbol: str, direction: str, price: float, range_high: 
     fields += _risk_fields(risk_data)
     fields += _confidence_fields(confidence)
     fields += _vix_field(vix_data)
+    fields += _a_plus_field(is_a_plus)
 
     embed = {
-        "title": f"{arrow} {symbol} Breakout {direction}",
+        "title": f"{_a_plus_prefix(is_a_plus)}{arrow} {symbol} Breakout {direction}",
         "color": color,
         "fields": fields,
         "footer": {"text": f"{asset_type.upper()} | Breakout + Volume Confirmation | Not financial advice"},
@@ -113,7 +135,8 @@ def build_breakout_embed(symbol: str, direction: str, price: float, range_high: 
 
 def build_rejection_embed(symbol: str, direction: str, price: float, range_high: float,
                            range_low: float, volume: float, avg_volume: float, asset_type: str,
-                           risk_data: dict = None, confidence: dict = None, vix_data: dict = None) -> dict:
+                           risk_data: dict = None, confidence: dict = None, vix_data: dict = None,
+                           is_a_plus: bool = False) -> dict:
     """
     Builds a Discord embed dict for a REJECTION alert - visually distinct
     from breakout alerts (different color/icon) so they're never confused
@@ -138,9 +161,10 @@ def build_rejection_embed(symbol: str, direction: str, price: float, range_high:
     fields += _risk_fields(risk_data)
     fields += _confidence_fields(confidence)
     fields += _vix_field(vix_data)
+    fields += _a_plus_field(is_a_plus)
 
     embed = {
-        "title": f"{icon} {symbol} Rejection at {level_tested} → Expect {direction}",
+        "title": f"{_a_plus_prefix(is_a_plus)}{icon} {symbol} Rejection at {level_tested} → Expect {direction}",
         "color": color,
         "fields": fields,
         "footer": {"text": f"{asset_type.upper()} | Rejection / Reversal Signal | Not financial advice"},
@@ -150,7 +174,8 @@ def build_rejection_embed(symbol: str, direction: str, price: float, range_high:
 
 def build_sweep_embed(symbol: str, direction: str, price: float, swept_level: float,
                        volume: float, avg_volume: float, asset_type: str,
-                       risk_data: dict = None, confidence: dict = None, vix_data: dict = None) -> dict:
+                       risk_data: dict = None, confidence: dict = None, vix_data: dict = None,
+                       is_a_plus: bool = False) -> dict:
     """
     Builds a Discord embed for a liquidity sweep alert - a third,
     visually distinct alert type (purple) from breakout and rejection.
@@ -171,9 +196,10 @@ def build_sweep_embed(symbol: str, direction: str, price: float, swept_level: fl
     fields += _risk_fields(risk_data)
     fields += _confidence_fields(confidence)
     fields += _vix_field(vix_data)
+    fields += _a_plus_field(is_a_plus)
 
     embed = {
-        "title": f"{icon} {symbol} Liquidity Sweep → Expect {direction}",
+        "title": f"{_a_plus_prefix(is_a_plus)}{icon} {symbol} Liquidity Sweep → Expect {direction}",
         "color": color,
         "fields": fields,
         "footer": {"text": f"{asset_type.upper()} | Liquidity Sweep / SMC Signal | Not financial advice"},
