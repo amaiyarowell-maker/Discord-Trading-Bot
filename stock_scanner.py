@@ -208,6 +208,23 @@ def _enrich_signal(signal: dict, data: pd.DataFrame, htf_data, vix_data: dict, s
     signal["risk_data"] = risk_data
     signal["confidence"] = confidence
     signal["htf_trend"] = htf_trend
+
+    # A+ setup tag: only when confidence, HTF agreement, AND risk:reward
+    # all clear their bars together. Computed here since this is the one
+    # place all three inputs already exist side by side.
+    is_a_plus = False
+    if confidence is not None:
+        import confidence as confidence_module
+        risk_reward = risk_data.get("risk_reward") if risk_data else None
+        is_a_plus = confidence_module.is_a_plus_setup(
+            confidence_total=confidence["total"],
+            htf_trend=htf_trend,
+            htf_agrees=htf_agrees,
+            risk_reward=risk_reward,
+        )
+        if is_a_plus and getattr(config, "DEBUG_SIGNAL_LOGGING", False):
+            logger.info(f"[{signal['symbol']}] A+ SETUP - confidence={confidence['total']} htf_trend={htf_trend} risk_reward={risk_reward}")
+    signal["is_a_plus"] = is_a_plus
     signal["signal_type"] = signal_type
     return signal
 
