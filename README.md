@@ -17,6 +17,7 @@ Scans a dynamic shortlist of actively-moving stocks, futures, and BTC for four k
 - **ATR-based stops & targets:** every breakout/rejection/sweep alert includes a suggested Entry, Stop Loss, Take Profit, and Risk:Reward ratio, calculated from Average True Range (volatility) rather than a fixed dollar or percent distance.
 - **VIX sentiment:** fetched once per cycle (it's market-wide, not per-symbol) and shown on every alert as context - elevated VIX ("HIGH FEAR") flags choppier conditions where breakouts are historically less reliable.
 - **Confidence score (0-100):** combines volume strength, HTF agreement, same-timeframe momentum, VIX context, and signal-type into a single transparent score, shown with a HIGH/MEDIUM/LOW label. Alerts scoring below `MIN_CONFIDENCE_TO_ALERT` are suppressed as low-conviction.
+- **A+ setup tag (⭐):** a deliberately strict badge, separate from the HIGH confidence label. Only applied when a signal clears ALL three bars at once: confidence ≥ `A_PLUS_MIN_CONFIDENCE` (default 75), the HTF trend ACTIVELY agrees with the signal direction (not just neutral/flat), AND risk:reward ≥ `A_PLUS_MIN_RISK_REWARD` (default 2.0). Not available on FVG alerts, since those have no ATR-based risk:reward to evaluate. This is a transparent, rule-based tag - not a backtested or validated "win rate," so treat it as "everything aligned on paper," not a guarantee.
 
 ### Coverage
 - **Stocks:** every minute, pulls a shortlist of ~25 currently active/moving tickers (so it never tries to brute-force scan the whole S&P 500), plus any tickers pinned in `config.py` (currently SPY and TSLA).
@@ -79,6 +80,7 @@ All thresholds live in `config.py`:
 | `ATR_PERIOD` / `ATR_STOP_MULTIPLIER` / `ATR_TARGET_MULTIPLIER` | ATR lookback period and the multipliers used to set suggested stop/target distance |
 | `SENTIMENT_ENABLED` / `VIX_HIGH_FEAR_THRESHOLD` / `VIX_LOW_FEAR_THRESHOLD` | Toggle and thresholds for VIX-based market sentiment context |
 | `CONFIDENCE_SCORING_ENABLED` / `MIN_CONFIDENCE_TO_ALERT` | Toggle and the minimum score (0-100) required to actually send an alert |
+| `A_PLUS_MIN_CONFIDENCE` / `A_PLUS_REQUIRE_ACTIVE_HTF_AGREEMENT` / `A_PLUS_MIN_RISK_REWARD` | The three bars a signal must clear together to earn the ⭐ A+ badge |
 | `DEBUG_SIGNAL_LOGGING` | When `True`, logs the exact computed values for every check, every cycle - very chatty, meant for troubleshooting, not normal use |
 
 ## Known limitations (free-tier reality check)
