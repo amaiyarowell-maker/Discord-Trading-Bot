@@ -12,6 +12,7 @@ import pandas as pd
 import config
 import indicators
 import smc_signals
+import momentum_signals
 
 logger = logging.getLogger("stock_scanner")
 
@@ -146,23 +147,30 @@ def _fetch_htf_candles(symbol: str):
 
 def _enrich_signal(signal: dict, data: pd.DataFrame, htf_data, vix_data: dict, signal_type: str) -> dict:
     """
-    Takes a raw signal dict (from breakout/rejection/sweep/FVG checks)
-    and adds: HTF trend agreement, ATR-based risk levels, and a
-    confidence score. Returns the enriched signal, or None if the HTF
-    filter is enabled and the higher timeframe actively disagrees with
-    the signal's direction (the one place this function can reject a
-    signal outright, rather than just annotate it).
+    Takes a raw signal dict (from breakout/rejection/sweep/FVG/early-
+    momentum checks) and adds: HTF trend agreement, ATR-based risk
+    levels, and a confidence score. Returns the enriched signal, or
+    None if the HTF filter is enabled and the higher timeframe actively
+    disagrees with the signal's direction.
 
     FVG signals skip ATR-based risk levels (a gap is a zone to watch,
     not a breakout/rejection trade trigger), but still get HTF +
     confidence scoring.
+
+    Early momentum signals deliberately SKIP the HTF hard-gate entirely
+    - the whole point of that signal type is to not wait on a higher
+    timeframe to confirm. HTF is still computed and shown for context/
+    scoring, just never used to block the alert. Early momentum is also
+    never eligible for the A+ badge, since it has a different (faster,
+    less-confirmed) risk profile than the other signal types.
     """
     direction = signal["direction"]
 
     # Higher-timeframe trend check
     htf_trend = indicators.get_htf_trend_direction(htf_data) if htf_data is not None else None
     htf_agrees = indicators.htf_trend_agrees(htf_trend, direction)
-    if config.HTF_FILTER_ENABLED and htf_trend is not None and not htf_agrees:
+    htf_blocks = config.HTF_FILTER_ENABLED and htf_trend is not None and not htf_agrees
+    if htf_blocks and signal_type != "early_momentum":
         if getattr(config, "DEBUG_SIGNAL_LOGGING", False):
             logger.info(f"[{signal['symbol']}] HTF-CHECK signal_dir={direction} htf_trend={htf_trend} -> blocked")
         return None
@@ -210,10 +218,11 @@ def _enrich_signal(signal: dict, data: pd.DataFrame, htf_data, vix_data: dict, s
     signal["htf_trend"] = htf_trend
 
     # A+ setup tag: only when confidence, HTF agreement, AND risk:reward
-    # all clear their bars together. Computed here since this is the one
-    # place all three inputs already exist side by side.
+    # all clear their bars together. Early momentum is never eligible,
+    # regardless of score, since it skips the HTF hard-gate above and
+    # has a fundamentally different (faster, less-confirmed) risk profile.
     is_a_plus = False
-    if confidence is not None:
+    if confidence is not None and signal_type != "early_momentum":
         import confidence as confidence_module
         risk_reward = risk_data.get("risk_reward") if risk_data else None
         is_a_plus = confidence_module.is_a_plus_setup(
@@ -389,12 +398,13 @@ def check_stock_rejection(symbol: str, is_futures: bool = False, data=None):
 
 def scan_stocks(watchlist: list, vix_data: dict = None) -> dict:
     """
-    Runs breakout, rejection, liquidity sweep, and FVG checks across the
-    given watchlist. Each qualifying signal is enriched with HTF trend
-    agreement, ATR-based risk levels, and a confidence score.
-    Returns {"breakout": [...], "rejection": [...], "sweep": [...], "fvg": [...]}.
+    Runs breakout, rejection, liquidity sweep, FVG, and early momentum
+    checks across the given watchlist. Each qualifying signal is
+    enriched with HTF trend agreement, ATR-based risk levels, and a
+    confidence score.
+    Returns {"breakout": [...], "rejection": [...], "sweep": [...], "fvg": [...], "early_momentum": [...]}.
     """
-    results = {"breakout": [], "rejection": [], "sweep": [], "fvg": []}
+    results = {"breakout": [], "rejection": [], "sweep": [], "fvg": [], "early_momentum": []}
     for symbol in watchlist:
         data = _fetch_candles(symbol)
         if data is None:
@@ -426,16 +436,23 @@ def scan_stocks(watchlist: list, vix_data: dict = None) -> dict:
             if enriched:
                 results["fvg"].append(enriched)
 
+        early_momentum = momentum_signals.check_early_momentum(data, symbol)
+        if early_momentum:
+            enriched = _enrich_signal(early_momentum, data, htf_data, vix_data, "early_momentum")
+            if enriched:
+                results["early_momentum"].append(enriched)
+
     return results
 
 
 def scan_futures(vix_data: dict = None) -> dict:
     """
-    Runs breakout, rejection, liquidity sweep, and FVG checks across
-    config.FUTURES_TICKERS, with the same enrichment as scan_stocks.
-    Returns {"breakout": [...], "rejection": [...], "sweep": [...], "fvg": [...]}.
+    Runs breakout, rejection, liquidity sweep, FVG, and early momentum
+    checks across config.FUTURES_TICKERS, with the same enrichment as
+    scan_stocks.
+    Returns {"breakout": [...], "rejection": [...], "sweep": [...], "fvg": [...], "early_momentum": [...]}.
     """
-    results = {"breakout": [], "rejection": [], "sweep": [], "fvg": []}
+    results = {"breakout": [], "rejection": [], "sweep": [], "fvg": [], "early_momentum": []}
     if not getattr(config, "FUTURES_ENABLED", False):
         return results
 
@@ -469,5 +486,11 @@ def scan_futures(vix_data: dict = None) -> dict:
             enriched = _enrich_signal(fvg, data, htf_data, vix_data, "fvg")
             if enriched:
                 results["fvg"].append(enriched)
+
+        early_momentum = momentum_signals.check_early_momentum(data, symbol)
+        if early_momentum:
+            enriched = _enrich_signal(early_momentum, data, htf_data, vix_data, "early_momentum")
+            if enriched:
+                results["early_momentum"].append(enriched)
 
     return results
