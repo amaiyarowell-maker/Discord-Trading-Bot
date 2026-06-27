@@ -129,3 +129,43 @@ def confidence_label(score: float) -> str:
     if score >= 50:
         return "MEDIUM"
     return "LOW"
+
+
+# ── A+ Setup Criteria ──────────────────────────────────────────────
+# A setup is tagged "A+" only when it clears ALL three bars below -
+# not just a high score on its own. This is deliberately stricter than
+# the HIGH confidence label (which only requires score >= 75), since
+# "A+" is meant to flag the rare setup with everything aligned, not
+# just a generally decent one. Thresholds are read from config.py so
+# they're tunable without editing this file.
+
+
+def is_a_plus_setup(confidence_total: float, htf_trend: str, htf_agrees: bool, risk_reward: float) -> bool:
+    """
+    Returns True only if a signal clears every A+ bar:
+      1. Confidence score >= config.A_PLUS_MIN_CONFIDENCE
+      2. HTF trend ACTIVELY agrees (not FLAT, not unknown/None) - this
+         is stricter than the confidence score's own HTF component,
+         which gives partial credit for a neutral HTF reading.
+      3. Risk:Reward >= config.A_PLUS_MIN_RISK_REWARD
+
+    Any missing/None input fails that criterion (does not default to
+    passing), so an A+ tag only ever appears when every input was
+    actually available and genuinely met the bar.
+    """
+    min_confidence = getattr(config, "A_PLUS_MIN_CONFIDENCE", 75)
+    require_htf = getattr(config, "A_PLUS_REQUIRE_ACTIVE_HTF_AGREEMENT", True)
+    min_rr = getattr(config, "A_PLUS_MIN_RISK_REWARD", 2.0)
+
+    if confidence_total is None or confidence_total < min_confidence:
+        return False
+
+    if require_htf:
+        htf_actively_agrees = htf_trend is not None and htf_trend != "FLAT" and htf_agrees
+        if not htf_actively_agrees:
+            return False
+
+    if risk_reward is None or risk_reward < min_rr:
+        return False
+
+    return True
