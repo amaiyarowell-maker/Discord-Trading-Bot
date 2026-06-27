@@ -287,6 +287,18 @@ def _enrich_btc_signal(signal: dict, data: pd.DataFrame, htf_data, vix_data: dic
     signal["risk_data"] = risk_data
     signal["confidence"] = confidence
     signal["htf_trend"] = htf_trend
+
+    is_a_plus = False
+    if confidence is not None:
+        import confidence as confidence_module
+        risk_reward = risk_data.get("risk_reward") if risk_data else None
+        is_a_plus = confidence_module.is_a_plus_setup(
+            confidence_total=confidence["total"],
+            htf_trend=htf_trend,
+            htf_agrees=htf_agrees,
+            risk_reward=risk_reward,
+        )
+    signal["is_a_plus"] = is_a_plus
     signal["signal_type"] = signal_type
     return signal
 
