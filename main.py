@@ -24,6 +24,7 @@ from notifier import (
     build_rejection_embed,
     build_sweep_embed,
     build_fvg_embed,
+    build_early_momentum_embed,
 )
 from stock_scanner import get_movers_shortlist, scan_stocks, scan_futures
 from btc_scanner import scan_btc
@@ -53,6 +54,7 @@ EMBED_BUILDERS = {
     "rejection": build_rejection_embed,
     "liquidity_sweep": build_sweep_embed,
     "fvg": build_fvg_embed,
+    "early_momentum": build_early_momentum_embed,
 }
 
 
@@ -105,6 +107,22 @@ def handle_signal(signal: dict, webhook_url: str, asset_type: str, signal_type: 
             confidence=confidence,
             vix_data=vix_data,
         )
+    elif signal_type == "early_momentum":
+        # Early momentum is never eligible for the A+ badge (different,
+        # faster, less-confirmed risk profile), so build_early_momentum_embed
+        # doesn't accept an is_a_plus argument either.
+        embed = embed_builder(
+            symbol=symbol,
+            direction=direction,
+            price=signal["price"],
+            volume=signal["volume"],
+            avg_volume=signal["avg_volume"],
+            price_accel_ratio=signal.get("price_accel_ratio"),
+            asset_type=asset_type,
+            risk_data=risk_data,
+            confidence=confidence,
+            vix_data=vix_data,
+        )
     else:  # breakout or rejection - same field shape
         embed = embed_builder(
             symbol=symbol,
@@ -133,12 +151,13 @@ def handle_signal(signal: dict, webhook_url: str, asset_type: str, signal_type: 
 
 
 def _handle_results(results: dict, webhook_url: str, asset_type: str, vix_data: dict):
-    """Iterates over all 4 signal-type lists in a scan result and dispatches each to handle_signal."""
+    """Iterates over all 5 signal-type lists in a scan result and dispatches each to handle_signal."""
     type_map = {
         "breakout": "breakout",
         "rejection": "rejection",
         "sweep": "liquidity_sweep",
         "fvg": "fvg",
+        "early_momentum": "early_momentum",
     }
     for result_key, signal_type in type_map.items():
         for sig in results.get(result_key, []):
@@ -196,7 +215,8 @@ def main():
         f"HTF filter: {'on' if config.HTF_FILTER_ENABLED else 'off'} | "
         f"SMC signals: {'on' if config.SMC_SIGNALS_ENABLED else 'off'} | "
         f"Sentiment (VIX): {'on' if config.SENTIMENT_ENABLED else 'off'} | "
-        f"Confidence scoring: {'on' if config.CONFIDENCE_SCORING_ENABLED else 'off'}"
+        f"Confidence scoring: {'on' if config.CONFIDENCE_SCORING_ENABLED else 'off'} | "
+        f"Early momentum: {'on' if config.EARLY_MOMENTUM_ENABLED else 'off'}"
     )
 
     watchlist = get_movers_shortlist()
