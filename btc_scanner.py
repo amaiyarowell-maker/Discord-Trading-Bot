@@ -16,6 +16,7 @@ import pandas as pd
 import config
 import indicators
 import smc_signals
+import momentum_signals
 
 logger = logging.getLogger("btc_scanner")
 
@@ -253,7 +254,8 @@ def _enrich_btc_signal(signal: dict, data: pd.DataFrame, htf_data, vix_data: dic
 
     htf_trend = indicators.get_htf_trend_direction(htf_data) if htf_data is not None else None
     htf_agrees = indicators.htf_trend_agrees(htf_trend, direction)
-    if config.HTF_FILTER_ENABLED and htf_trend is not None and not htf_agrees:
+    htf_blocks = config.HTF_FILTER_ENABLED and htf_trend is not None and not htf_agrees
+    if htf_blocks and signal_type != "early_momentum":
         return None
 
     risk_data = None
@@ -289,7 +291,7 @@ def _enrich_btc_signal(signal: dict, data: pd.DataFrame, htf_data, vix_data: dic
     signal["htf_trend"] = htf_trend
 
     is_a_plus = False
-    if confidence is not None:
+    if confidence is not None and signal_type != "early_momentum":
         import confidence as confidence_module
         risk_reward = risk_data.get("risk_reward") if risk_data else None
         is_a_plus = confidence_module.is_a_plus_setup(
@@ -305,12 +307,12 @@ def _enrich_btc_signal(signal: dict, data: pd.DataFrame, htf_data, vix_data: dic
 
 def scan_btc(vix_data: dict = None) -> dict:
     """
-    Runs breakout, rejection, liquidity sweep, and FVG checks for BTC,
-    with the same enrichment (HTF trend, ATR risk, confidence score)
-    as the stock scanner. Returns one signal max per type (BTC is a
-    single symbol, unlike the stock watchlist loop).
+    Runs breakout, rejection, liquidity sweep, FVG, and early momentum
+    checks for BTC, with the same enrichment (HTF trend, ATR risk,
+    confidence score) as the stock scanner. Returns one signal max per
+    type (BTC is a single symbol, unlike the stock watchlist loop).
     """
-    results = {"breakout": [], "rejection": [], "sweep": [], "fvg": []}
+    results = {"breakout": [], "rejection": [], "sweep": [], "fvg": [], "early_momentum": []}
 
     data = _fetch_btc_ohlcv()
     if data is None:
@@ -341,5 +343,11 @@ def scan_btc(vix_data: dict = None) -> dict:
         enriched = _enrich_btc_signal(fvg, data, htf_data, vix_data, "fvg")
         if enriched:
             results["fvg"].append(enriched)
+
+    early_momentum = momentum_signals.check_early_momentum(data, "BTC/USD")
+    if early_momentum:
+        enriched = _enrich_btc_signal(early_momentum, data, htf_data, vix_data, "early_momentum")
+        if enriched:
+            results["early_momentum"].append(enriched)
 
     return results
