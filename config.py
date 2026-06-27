@@ -109,6 +109,19 @@ SWING_LOOKBACK_CANDLES = 10         # how many candles back to look for the swin
 SWEEP_PROXIMITY_PCT = 0.0015        # how close price must wick beyond the swing point to count as a sweep
 FVG_MIN_GAP_PCT = 0.0008            # minimum gap size (% of price) for an FVG to be considered notable
 
+# ── Early Momentum Signals ─────────────────────────────────────────
+# The fastest, LEAST-confirmed signal type - no range, no HTF, no
+# momentum-MA filter. Looks at the last few candles directly for a
+# sudden acceleration in price AND volume, moving the same direction.
+# This catches moves earlier than breakout/rejection/sweep, but with
+# more false positives - that's an explicit, accepted tradeoff for
+# getting in earlier on a real move. Excluded from the A+ badge since
+# it has a fundamentally different (faster, less-confirmed) risk profile.
+EARLY_MOMENTUM_ENABLED = True
+EARLY_MOMENTUM_CONFIRM_CANDLES = 3          # candles that must all move the same direction
+EARLY_MOMENTUM_LOOKBACK_CANDLES = 20        # baseline window to compare acceleration against
+EARLY_MOMENTUM_PRICE_ACCEL_MULTIPLIER = 2.0  # latest candle's % move must be >= this x the baseline average
+
 # ── ATR-Based Stops & Risk Management ─────────────────────────────
 # Every alert now includes a suggested entry, stop-loss, take-profit,
 # and resulting risk:reward ratio - calculated from ATR (Average True
@@ -157,3 +170,4 @@ LOG_FILE = "bot.log"
 # why a signal did or didn't fire. Very chatty - turn off once things
 # are working as expected.
 DEBUG_SIGNAL_LOGGING = True
+   
