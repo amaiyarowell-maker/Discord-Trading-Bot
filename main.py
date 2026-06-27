@@ -74,6 +74,7 @@ def handle_signal(signal: dict, webhook_url: str, asset_type: str, signal_type: 
     risk_data = signal.get("risk_data")
     confidence = signal.get("confidence")
     vix_data = signal.get("vix_data")
+    is_a_plus = signal.get("is_a_plus", False)
 
     if signal_type == "liquidity_sweep":
         embed = embed_builder(
@@ -87,8 +88,12 @@ def handle_signal(signal: dict, webhook_url: str, asset_type: str, signal_type: 
             risk_data=risk_data,
             confidence=confidence,
             vix_data=vix_data,
+            is_a_plus=is_a_plus,
         )
     elif signal_type == "fvg":
+        # FVG has no ATR-based risk:reward, which is one of the three
+        # required A+ criteria - so FVG alerts are never tagged A+ and
+        # build_fvg_embed doesn't accept an is_a_plus argument.
         embed = embed_builder(
             symbol=symbol,
             direction=direction,
@@ -113,12 +118,16 @@ def handle_signal(signal: dict, webhook_url: str, asset_type: str, signal_type: 
             risk_data=risk_data,
             confidence=confidence,
             vix_data=vix_data,
+            is_a_plus=is_a_plus,
         )
 
     sent = send_discord_alert(webhook_url, embed)
     if sent:
         cooldown.mark_alerted(symbol, direction, signal_type)
-        logger.info(f"[{symbol}] {direction} {signal_type} alert sent.")
+        if is_a_plus:
+            logger.info(f"[{symbol}] {direction} {signal_type} A+ SETUP alert sent.")
+        else:
+            logger.info(f"[{symbol}] {direction} {signal_type} alert sent.")
     else:
         logger.warning(f"[{symbol}] {direction} {signal_type} detected but Discord send failed.")
 
