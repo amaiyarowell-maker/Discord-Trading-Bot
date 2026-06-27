@@ -69,6 +69,23 @@ def _a_plus_field(is_a_plus: bool) -> list:
     return [{"name": "⭐ Setup Grade", "value": "A+ (all criteria met)", "inline": True}]
 
 
+def _guidance_fields(guidance: dict) -> list:
+    """
+    Builds the Discord embed fields for entry guidance (tactic,
+    invalidation, confirmation to watch). Returns an empty list if
+    guidance is missing, so alerts still send cleanly if this couldn't
+    be generated for some reason. Fields are NOT inline - this text is
+    long enough that inline formatting would make it unreadable.
+    """
+    if not guidance:
+        return []
+    return [
+        {"name": "📍 Entry Tactic", "value": guidance["entry_tactic"], "inline": False},
+        {"name": "❌ Invalidation", "value": guidance["invalidation"], "inline": False},
+        {"name": "👀 Confirmation to Watch", "value": guidance["confirmation_to_watch"], "inline": False},
+    ]
+
+
 def send_discord_alert(webhook_url: str, embed: dict):
     """
     Sends a single embed message to a Discord webhook.
@@ -111,6 +128,9 @@ def build_breakout_embed(symbol: str, direction: str, price: float, range_high: 
     arrow = "🟢⬆️" if direction == "UP" else "🔴⬇️"
     vol_ratio = round(volume / avg_volume, 2) if avg_volume else 0
 
+    import entry_guidance
+    guidance = entry_guidance.breakout_guidance(direction, price, range_high, range_low)
+
     fields = [
         {"name": "Price", "value": f"${price:,.2f}", "inline": True},
         {"name": "Range High", "value": f"${range_high:,.2f}", "inline": True},
@@ -123,6 +143,7 @@ def build_breakout_embed(symbol: str, direction: str, price: float, range_high: 
     fields += _confidence_fields(confidence)
     fields += _vix_field(vix_data)
     fields += _a_plus_field(is_a_plus)
+    fields += _guidance_fields(guidance)
 
     embed = {
         "title": f"{_a_plus_prefix(is_a_plus)}{arrow} {symbol} Breakout {direction}",
@@ -150,6 +171,9 @@ def build_rejection_embed(symbol: str, direction: str, price: float, range_high:
     vol_ratio = round(volume / avg_volume, 2) if avg_volume else 0
     level_tested = "Top" if direction == "DOWN" else "Bottom"
 
+    import entry_guidance
+    guidance = entry_guidance.rejection_guidance(direction, price, range_high, range_low)
+
     fields = [
         {"name": "Price", "value": f"${price:,.2f}", "inline": True},
         {"name": "Range High", "value": f"${range_high:,.2f}", "inline": True},
@@ -162,6 +186,7 @@ def build_rejection_embed(symbol: str, direction: str, price: float, range_high:
     fields += _confidence_fields(confidence)
     fields += _vix_field(vix_data)
     fields += _a_plus_field(is_a_plus)
+    fields += _guidance_fields(guidance)
 
     embed = {
         "title": f"{_a_plus_prefix(is_a_plus)}{icon} {symbol} Rejection at {level_tested} → Expect {direction}",
@@ -186,6 +211,9 @@ def build_sweep_embed(symbol: str, direction: str, price: float, swept_level: fl
     vol_ratio = round(volume / avg_volume, 2) if avg_volume else 0
     level_label = "Swing High" if direction == "DOWN" else "Swing Low"
 
+    import entry_guidance
+    guidance = entry_guidance.sweep_guidance(direction, price, swept_level)
+
     fields = [
         {"name": "Price", "value": f"${price:,.2f}", "inline": True},
         {"name": level_label + " Swept", "value": f"${swept_level:,.2f}", "inline": True},
@@ -197,12 +225,51 @@ def build_sweep_embed(symbol: str, direction: str, price: float, swept_level: fl
     fields += _confidence_fields(confidence)
     fields += _vix_field(vix_data)
     fields += _a_plus_field(is_a_plus)
+    fields += _guidance_fields(guidance)
 
     embed = {
         "title": f"{_a_plus_prefix(is_a_plus)}{icon} {symbol} Liquidity Sweep → Expect {direction}",
         "color": color,
         "fields": fields,
         "footer": {"text": f"{asset_type.upper()} | Liquidity Sweep / SMC Signal | Not financial advice"},
+    }
+    return embed
+
+
+def build_early_momentum_embed(symbol: str, direction: str, price: float, volume: float,
+                                avg_volume: float, price_accel_ratio: float, asset_type: str,
+                                risk_data: dict = None, confidence: dict = None, vix_data: dict = None) -> dict:
+    """
+    Builds a Discord embed for an EARLY MOMENTUM alert - the fastest,
+    least-confirmed signal type, visually distinct (orange/yellow) from
+    all other signal types. No is_a_plus parameter: early momentum is
+    intentionally excluded from the A+ badge since it has a different,
+    faster, less-confirmed risk profile than the other signal types.
+    """
+    color = 0xFFA500  # orange, distinct from all other signal types
+    arrow = "🟡⚡" if direction == "UP" else "🟠⚡"
+    vol_ratio = round(volume / avg_volume, 2) if avg_volume else 0
+
+    import entry_guidance
+    guidance = entry_guidance.early_momentum_guidance(direction, price, price_accel_ratio)
+
+    fields = [
+        {"name": "Price", "value": f"${price:,.2f}", "inline": True},
+        {"name": "Volume", "value": f"{volume:,.0f}", "inline": True},
+        {"name": "Avg Volume", "value": f"{avg_volume:,.0f}", "inline": True},
+        {"name": "Vol Multiple", "value": f"{vol_ratio}x", "inline": True},
+        {"name": "Price Accel", "value": f"{price_accel_ratio}x baseline" if price_accel_ratio else "N/A", "inline": True},
+    ]
+    fields += _risk_fields(risk_data)
+    fields += _confidence_fields(confidence)
+    fields += _vix_field(vix_data)
+    fields += _guidance_fields(guidance)
+
+    embed = {
+        "title": f"{arrow} {symbol} Early Momentum {direction}",
+        "color": color,
+        "fields": fields,
+        "footer": {"text": f"{asset_type.upper()} | Early Momentum - fast, less-confirmed signal | Not financial advice"},
     }
     return embed
 
@@ -219,6 +286,9 @@ def build_fvg_embed(symbol: str, direction: str, price: float, gap_top: float,
     color = 0x1ABC9C  # teal, distinct from the other three alert types
     icon = "🟦📍"
 
+    import entry_guidance
+    guidance = entry_guidance.fvg_guidance(direction, price, gap_top, gap_bottom)
+
     fields = [
         {"name": "Price", "value": f"${price:,.2f}", "inline": True},
         {"name": "Gap Top", "value": f"${gap_top:,.2f}", "inline": True},
@@ -227,6 +297,7 @@ def build_fvg_embed(symbol: str, direction: str, price: float, gap_top: float,
     ]
     fields += _confidence_fields(confidence)
     fields += _vix_field(vix_data)
+    fields += _guidance_fields(guidance)
 
     embed = {
         "title": f"{icon} {symbol} Fair Value Gap ({direction} bias)",
